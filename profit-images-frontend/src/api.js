@@ -75,7 +75,10 @@ export const bulkUploadPresigned = async (files, prefix, onProgress, signal) => 
         const resp = await fetch(uploadUrl, {
           method: 'PUT',
           body: file,
-          headers: { 'Content-Type': file.type || 'application/octet-stream' },
+          headers: {
+            'Content-Type': file.type || 'application/octet-stream',
+            'x-amz-acl': 'public-read',
+          },
           signal,
         });
         if (!resp.ok) throw new Error(`S3 upload failed for ${file.name}: ${resp.status}`);
