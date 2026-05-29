@@ -51,8 +51,8 @@ export function useImages() {
     return data;
   }, []);
 
-  const uploadMany = useCallback(async (files, prefix, onProgress) => {
-    const { data } = await bulkUploadPresigned(Array.from(files), prefix, onProgress);
+  const uploadMany = useCallback(async (files, prefix, onProgress, signal) => {
+    const { data } = await bulkUploadPresigned(Array.from(files), prefix, onProgress, signal);
     setImages((prev) => {
       const existing = new Set(prev.map((i) => i.key));
       const newItems = data.uploaded.filter((i) => !existing.has(i.key));

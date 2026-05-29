@@ -40,46 +40,53 @@ export const uploadImage = (key, file, onProgress) => {
   });
 };
 
-const PRESIGN_BATCH = 500; // filenames per presign request (pure metadata, no file data)
-const UPLOAD_CONCURRENCY = 10; // simultaneous PUT requests to S3
+const QUEUE_CHUNK = 50;       // files per presign+upload cycle — keeps memory flat
+const UPLOAD_CONCURRENCY = 8; // simultaneous S3 PUTs within a chunk
 
-// Upload files directly to S3 via presigned URLs — backend never buffers file data.
-// onProgress receives { percent, completed, total }
-export const bulkUploadPresigned = async (files, prefix, onProgress) => {
+// Queue-based upload: presign + upload QUEUE_CHUNK files at a time.
+// Memory usage stays constant regardless of total file count.
+// onProgress receives { percent, completed, total, eta, rate }
+// signal: AbortSignal for cancellation
+export const bulkUploadPresigned = async (files, prefix, onProgress, signal) => {
   const allFiles = Array.from(files);
   const total = allFiles.length;
   let completed = 0;
-
-  // Step 1: get presigned URLs from backend in batches (just metadata)
-  const allPresigned = [];
-  for (let i = 0; i < allFiles.length; i += PRESIGN_BATCH) {
-    const batch = allFiles.slice(i, i + PRESIGN_BATCH);
-    const { data } = await api.post('/images/presign', {
-      files: batch.map((f) => ({ filename: f.name, contentType: f.type || 'application/octet-stream' })),
-      prefix,
-    });
-    allPresigned.push(...data.presigned);
-  }
-
-  // Step 2: upload each file directly to S3 with bounded concurrency
-  const pairs = allFiles.map((file, i) => ({ file, ...allPresigned[i] }));
   const results = [];
+  const startTime = Date.now();
 
-  for (let i = 0; i < pairs.length; i += UPLOAD_CONCURRENCY) {
-    const chunk = pairs.slice(i, i + UPLOAD_CONCURRENCY);
-    await Promise.all(
-      chunk.map(async ({ file, key, uploadUrl, cdnUrl }) => {
+  for (let i = 0; i < allFiles.length; i += QUEUE_CHUNK) {
+    if (signal?.aborted) throw new DOMException('Cancelled by user', 'AbortError');
+
+    const chunk = allFiles.slice(i, i + QUEUE_CHUNK);
+
+    // Presign only this chunk
+    const { data } = await api.post('/images/presign', {
+      files: chunk.map((f) => ({ filename: f.name, contentType: f.type || 'application/octet-stream' })),
+      prefix,
+    }, { signal });
+
+    const pairs = chunk.map((file, j) => ({ file, ...data.presigned[j] }));
+
+    // Upload chunk with bounded concurrency
+    for (let j = 0; j < pairs.length; j += UPLOAD_CONCURRENCY) {
+      if (signal?.aborted) throw new DOMException('Cancelled by user', 'AbortError');
+      const batch = pairs.slice(j, j + UPLOAD_CONCURRENCY);
+      await Promise.all(batch.map(async ({ file, key, uploadUrl, cdnUrl }) => {
         const resp = await fetch(uploadUrl, {
           method: 'PUT',
           body: file,
           headers: { 'Content-Type': file.type || 'application/octet-stream' },
+          signal,
         });
         if (!resp.ok) throw new Error(`S3 upload failed for ${file.name}: ${resp.status}`);
         completed++;
-        onProgress?.({ percent: Math.round((completed / total) * 100), completed, total });
+        const elapsed = (Date.now() - startTime) / 1000;
+        const rate = elapsed > 0.5 ? completed / elapsed : 0;
+        const eta = rate > 0 ? Math.round((total - completed) / rate) : null;
+        onProgress?.({ percent: Math.round((completed / total) * 100), completed, total, eta, rate });
         results.push({ key, url: cdnUrl, size: file.size, contentType: file.type });
-      })
-    );
+      }));
+    }
   }
 
   return { data: { uploaded: results, count: results.length } };

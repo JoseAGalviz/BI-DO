@@ -20,11 +20,25 @@ const IconInfo = () => (
 export function UploadModal({ onUpload, onBulkUpload, onClose, defaultPrefix = '' }) {
   const [files, setFiles]       = useState([]);
   const [key, setKey]           = useState('');
-  const [uploadStats, setUploadStats] = useState({ percent: 0, completed: 0, total: 0 });
+  const [uploadStats, setUploadStats] = useState({ percent: 0, completed: 0, total: 0, eta: null, rate: 0 });
   const [uploading, setUploading] = useState(false);
+  const [cancelled, setCancelled] = useState(false);
   const [error, setError]       = useState(null);
   const [dragOver, setDragOver] = useState(false);
   const inputRef = useRef();
+  const abortRef = useRef(null);
+
+  const fmtEta = (secs) => {
+    if (!secs || secs < 1) return null;
+    if (secs < 60) return `${secs}s`;
+    const m = Math.floor(secs / 60), s = secs % 60;
+    return s > 0 ? `${m}m ${s}s` : `${m}m`;
+  };
+
+  const handleCancel = () => {
+    abortRef.current?.abort();
+    setCancelled(true);
+  };
 
   const isBulk   = files.length > 1;
   const isSingle = files.length === 1;
@@ -55,22 +69,32 @@ export function UploadModal({ onUpload, onBulkUpload, onClose, defaultPrefix = '
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!files.length) return;
-    setUploading(true); setError(null);
-    setUploadStats({ percent: 0, completed: 0, total: files.length });
+    const controller = new AbortController();
+    abortRef.current = controller;
+    setUploading(true); setError(null); setCancelled(false);
+    setUploadStats({ percent: 0, completed: 0, total: files.length, eta: null, rate: 0 });
     try {
       if (isBulk) {
         await onBulkUpload(files, defaultPrefix, (info) => {
           if (typeof info === 'number') setUploadStats((p) => ({ ...p, percent: info }));
           else setUploadStats(info);
-        });
+        }, controller.signal);
       } else {
         if (!key) return;
-        await onUpload(key, files[0], (pct) => setUploadStats({ percent: pct, completed: pct === 100 ? 1 : 0, total: 1 }));
+        await onUpload(key, files[0], (pct) => setUploadStats({ percent: pct, completed: pct === 100 ? 1 : 0, total: 1, eta: null, rate: 0 }));
       }
       onClose();
     } catch (err) {
-      setError(err.response?.data?.error || err.message);
-    } finally { setUploading(false); setUploadStats({ percent: 0, completed: 0, total: 0 }); }
+      if (err.name === 'AbortError') {
+        setError('Carga cancelada.');
+      } else {
+        setError(err.response?.data?.error || err.message);
+      }
+    } finally {
+      setUploading(false);
+      setUploadStats({ percent: 0, completed: 0, total: 0, eta: null, rate: 0 });
+      abortRef.current = null;
+    }
   };
 
   const canSubmit = files.length > 0 && (isBulk || key) && !uploading;
@@ -171,19 +195,22 @@ export function UploadModal({ onUpload, onBulkUpload, onClose, defaultPrefix = '
           {/* Progress */}
           {uploading && (
             <div style={s.progressWrap}>
-              {isBulk && uploadStats.total > 1 && (
-                <div style={s.progressMeta}>
-                  <span style={s.progressFiles}>
-                    {uploadStats.completed} / {uploadStats.total} archivos
-                  </span>
+              <div style={s.progressMeta}>
+                <span style={s.progressFiles}>
+                  {uploadStats.completed} / {uploadStats.total} archivo{uploadStats.total !== 1 ? 's' : ''}
+                  {uploadStats.rate > 0 && (
+                    <span style={s.progressRate}> · {uploadStats.rate.toFixed(1)}/s</span>
+                  )}
+                </span>
+                <span style={s.progressRight}>
+                  {fmtEta(uploadStats.eta) && (
+                    <span style={s.progressEta}>~{fmtEta(uploadStats.eta)} restante</span>
+                  )}
                   <span style={s.progressPct}>{uploadStats.percent}%</span>
-                </div>
-              )}
-              <div style={s.progressRow}>
-                <div style={s.progressTrack}>
-                  <div style={{ ...s.progressFill, width:`${uploadStats.percent}%` }}/>
-                </div>
-                {!isBulk && <span style={s.progressLabel}>{uploadStats.percent}%</span>}
+                </span>
+              </div>
+              <div style={s.progressTrack}>
+                <div style={{ ...s.progressFill, width:`${uploadStats.percent}%` }}/>
               </div>
             </div>
           )}
@@ -193,7 +220,13 @@ export function UploadModal({ onUpload, onBulkUpload, onClose, defaultPrefix = '
 
         {/* Footer */}
         <div style={s.footer}>
-          <button style={s.btnCancel} onClick={onClose} disabled={uploading}>Cancelar</button>
+          {uploading ? (
+            <button style={s.btnDanger} onClick={handleCancel} disabled={cancelled}>
+              {cancelled ? 'Cancelando...' : 'Cancelar carga'}
+            </button>
+          ) : (
+            <button style={s.btnCancel} onClick={onClose}>Cancelar</button>
+          )}
           <button
             style={{ ...s.btnSubmit, ...(!canSubmit ? s.btnOff : {}) }}
             onClick={handleSubmit} disabled={!canSubmit}
@@ -286,14 +319,15 @@ const s = {
     borderRadius: 'var(--r-sm)', fontSize: 12, color: 'var(--text-secondary)',
   },
 
-  progressWrap: { display: 'flex', flexDirection: 'column', gap: 6 },
+  progressWrap: { display: 'flex', flexDirection: 'column', gap: 8 },
   progressMeta: { display: 'flex', justifyContent: 'space-between', alignItems: 'center' },
   progressFiles: { fontSize: 12, color: 'var(--text-secondary)', fontWeight: 500 },
+  progressRate: { color: 'var(--text-muted)', fontWeight: 400 },
+  progressRight: { display: 'flex', alignItems: 'center', gap: 10 },
+  progressEta: { fontSize: 11, color: 'var(--text-muted)' },
   progressPct: { fontSize: 12, color: 'var(--teal-600)', fontWeight: 600 },
-  progressRow: { display: 'flex', alignItems: 'center', gap: 10 },
-  progressTrack: { flex: 1, height: 5, background: 'var(--border-soft)', borderRadius: 3, overflow: 'hidden' },
-  progressFill: { height: '100%', background: 'var(--teal-600)', transition: 'width 0.2s', borderRadius: 3 },
-  progressLabel: { fontSize: 12, color: 'var(--text-muted)', width: 32, textAlign: 'right', flexShrink: 0 },
+  progressTrack: { height: 6, background: 'var(--border-soft)', borderRadius: 3, overflow: 'hidden' },
+  progressFill: { height: '100%', background: 'var(--teal-600)', transition: 'width 0.25s', borderRadius: 3 },
 
   errorBox: {
     padding: '10px 14px', background: 'var(--danger-soft)',
@@ -308,6 +342,12 @@ const s = {
   btnCancel: {
     padding: '9px 20px', fontSize: 13, fontWeight: 500, background: 'transparent',
     color: 'var(--text-secondary)', border: '1.5px solid var(--border)',
+    borderRadius: 'var(--r-full)', cursor: 'pointer', fontFamily: 'inherit',
+  },
+  btnDanger: {
+    padding: '9px 20px', fontSize: 13, fontWeight: 600,
+    background: 'var(--danger-soft)', color: 'var(--danger)',
+    border: '1.5px solid var(--danger-border)',
     borderRadius: 'var(--r-full)', cursor: 'pointer', fontFamily: 'inherit',
   },
   btnSubmit: {

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useImages } from './useImages';
 import { useVirtualGrid } from './useVirtualGrid';
 import { FolderList } from './FolderList';
@@ -51,6 +51,7 @@ export default function App() {
   const [currentFolder, setCurrentFolder] = useState(null);
   const [showUpload, setShowUpload]       = useState(false);
   const [selected, setSelected]           = useState(new Set());
+  const [searchQuery, setSearchQuery]     = useState('');
   const [bulkDeleting, setBulkDeleting]   = useState(false);
   const [deleteProgress, setDeleteProgress] = useState(0);
   const [confirmDel, setConfirmDel]       = useState(false);
@@ -62,6 +63,7 @@ export default function App() {
   useEffect(() => {
     if (!user) return;
     setSelected(new Set());
+    setSearchQuery('');
     if (currentFolder === null) fetchFolders('');
     else fetchImages(currentFolder.prefix);
   }, [currentFolder, user]);
@@ -75,7 +77,7 @@ export default function App() {
   });
 
   const toggleAll = () =>
-    setSelected(selected.size === images.length ? new Set() : new Set(images.map(i => i.key)));
+    setSelected(selected.size === filteredImages.length ? new Set() : new Set(filteredImages.map(i => i.key)));
 
   const handleBulkDel = async () => {
     setBulkDeleting(true);
@@ -90,7 +92,12 @@ export default function App() {
     }
   };
 
-  const { visibleItems, hasMore, remaining, sentinelRef } = useVirtualGrid(images);
+  const filteredImages = useMemo(() =>
+    searchQuery
+      ? images.filter(img => img.key.split('/').pop().toLowerCase().includes(searchQuery.toLowerCase()))
+      : images,
+  [images, searchQuery]);
+  const { visibleItems, hasMore, remaining, sentinelRef } = useVirtualGrid(filteredImages);
 
   if (!user) {
     return <LoginPage onLogin={(d) => { localStorage.setItem('token', d.token); setUser(d); }}/>;
@@ -98,7 +105,7 @@ export default function App() {
 
   const inFolder  = currentFolder !== null;
   const selMode   = selected.size > 0;
-  const allSel    = images.length > 0 && selected.size === images.length;
+  const allSel    = filteredImages.length > 0 && selected.size === filteredImages.length;
 
   const goBack = () => { setCurrentFolder(null); setSelected(new Set()); };
 
@@ -277,7 +284,7 @@ export default function App() {
                 <div>
                   <h1 style={s.pageTitle}>{currentFolder.name}</h1>
                   <p style={s.pageDesc}>
-                    {loading ? 'Cargando...' : `${images.length} imagen${images.length !== 1 ? 'es' : ''}`}
+                    {loading ? 'Cargando...' : `${filteredImages.length}${searchQuery ? ` de ${images.length}` : ''} imagen${filteredImages.length !== 1 ? 'es' : ''}`}
                     {images.length > 0 && !loading && (
                       <button style={s.selAllBtn} onClick={toggleAll}>
                         {allSel ? 'Deseleccionar todas' : 'Seleccionar todas'}
@@ -285,18 +292,37 @@ export default function App() {
                     )}
                   </p>
                 </div>
-                {images.length > 0 && !selMode && (
-                  <button style={s.btnPrimary} onClick={() => setShowUpload(true)}>
-                    <IcoUpload/> Subir imagen
-                  </button>
-                )}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  {images.length > 0 && !loading && (
+                    <div style={s.searchWrap}>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                        <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                      </svg>
+                      <input
+                        style={s.searchInput}
+                        type="text"
+                        placeholder="Buscar imágenes..."
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                      />
+                      {searchQuery && (
+                        <button style={s.searchClear} onClick={() => setSearchQuery('')}>✕</button>
+                      )}
+                    </div>
+                  )}
+                  {images.length > 0 && !selMode && (
+                    <button style={s.btnPrimary} onClick={() => setShowUpload(true)}>
+                      <IcoUpload/> Subir imagen
+                    </button>
+                  )}
+                </div>
               </div>
 
               {loading ? (
                 <div style={s.skeletonGrid}>
                   {Array.from({length:12}).map((_,i) => <div key={i} style={s.skeleton}/>)}
                 </div>
-              ) : images.length === 0 ? (
+              ) : filteredImages.length === 0 ? (
                 <div style={s.empty}>
                   <div style={s.emptyIcon}>
                     <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--teal-500)" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" opacity="0.5">
@@ -304,11 +330,21 @@ export default function App() {
                       <polyline points="21 15 16 10 5 21"/>
                     </svg>
                   </div>
-                  <p style={s.emptyTitle}>Esta carpeta está vacía</p>
-                  <p style={s.emptyDesc}>Sube la primera imagen a <strong>{currentFolder.name}</strong></p>
-                  <button style={s.btnPrimary} onClick={() => setShowUpload(true)}>
-                    <IcoUpload/> Subir imagen
-                  </button>
+                  {searchQuery ? (
+                    <>
+                      <p style={s.emptyTitle}>Sin resultados</p>
+                      <p style={s.emptyDesc}>No hay imágenes que coincidan con "<strong>{searchQuery}</strong>"</p>
+                      <button style={s.btnGhost} onClick={() => setSearchQuery('')}>Limpiar búsqueda</button>
+                    </>
+                  ) : (
+                    <>
+                      <p style={s.emptyTitle}>Esta carpeta está vacía</p>
+                      <p style={s.emptyDesc}>Sube la primera imagen a <strong>{currentFolder.name}</strong></p>
+                      <button style={s.btnPrimary} onClick={() => setShowUpload(true)}>
+                        <IcoUpload/> Subir imagen
+                      </button>
+                    </>
+                  )}
                 </div>
               ) : (
                 <>
@@ -345,7 +381,7 @@ export default function App() {
         <UploadModal
           defaultPrefix={currentFolder?.prefix || ''}
           onUpload={async (key, file, onProgress) => { await upload(key, file, onProgress); }}
-          onBulkUpload={async (files, prefix, onProgress) => { await uploadMany(files, prefix, onProgress); }}
+          onBulkUpload={async (files, prefix, onProgress, signal) => { await uploadMany(files, prefix, onProgress, signal); }}
           onClose={() => setShowUpload(false)}
         />
       )}
@@ -451,6 +487,23 @@ const s = {
   selAllBtn: {
     background: 'none', border: 'none', color: 'var(--teal-600)',
     fontSize: 13, fontWeight: 500, cursor: 'pointer', padding: 0, fontFamily: 'inherit',
+  },
+
+  searchWrap: {
+    display: 'flex', alignItems: 'center', gap: 8,
+    background: 'var(--surface)', border: '1.5px solid var(--border)',
+    borderRadius: 'var(--r-full)', padding: '7px 14px',
+    boxShadow: 'var(--shadow-xs)',
+  },
+  searchInput: {
+    border: 'none', outline: 'none', background: 'transparent',
+    fontSize: 13, color: 'var(--text-primary)', fontFamily: 'inherit',
+    width: 180,
+  },
+  searchClear: {
+    background: 'none', border: 'none', cursor: 'pointer',
+    color: 'var(--text-muted)', fontSize: 11, padding: 0, lineHeight: 1,
+    display: 'flex', alignItems: 'center',
   },
 
   grid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(190px, 1fr))', gap: 16 },
