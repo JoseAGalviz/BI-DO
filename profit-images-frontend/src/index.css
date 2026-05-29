@@ -1,0 +1,72 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+
+:root {
+  /* Brand - Teal (primario) */
+  --teal-500: #2fbba8;
+  --teal-600: #1a9888;
+  --teal-700: #137568;
+
+  /* Brand - Green (secundario) */
+  --green-500: #5bc760;
+  --green-600: #49af4e;
+  --green-700: #3a8c3e;
+
+  /* Superficies */
+  --bg:       #F2F7F7;
+  --surface:  #FFFFFF;
+  --surface-2:#F8FCFB;
+
+  /* Bordes */
+  --border:     #DDE9E7;
+  --border-soft:#EEF5F4;
+
+  /* Texto */
+  --text-primary:   #0E2422;
+  --text-secondary: #4A6E6A;
+  --text-muted:     #8AAFAB;
+  --text-inverse:   #FFFFFF;
+
+  /* Semántico */
+  --danger:        #E53E3E;
+  --danger-soft:   #FFF5F5;
+  --danger-border: #FED7D7;
+
+  /* Sombras */
+  --shadow-xs: 0 1px 2px rgba(14,36,34,.05);
+  --shadow-sm: 0 1px 4px rgba(14,36,34,.07);
+  --shadow:    0 2px 8px rgba(14,36,34,.08);
+  --shadow-md: 0 8px 24px rgba(14,36,34,.10);
+  --shadow-lg: 0 16px 48px rgba(14,36,34,.12);
+
+  /* Radio */
+  --r-xs: 4px;
+  --r-sm: 8px;
+  --r:    12px;
+  --r-lg: 16px;
+  --r-xl: 24px;
+  --r-full: 9999px;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: 'Inter', system-ui, sans-serif;
+  background: var(--bg);
+  color: var(--text-primary);
+  -webkit-font-smoothing: antialiased;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+#root { width: 100%; min-height: 100vh; }
+button { font-family: inherit; cursor: pointer; }
+input  { font-family: inherit; }
+
+input:focus {
+  outline: 2px solid var(--teal-500);
+  outline-offset: -1px;
+  border-color: var(--teal-500) !important;
+}
+
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
