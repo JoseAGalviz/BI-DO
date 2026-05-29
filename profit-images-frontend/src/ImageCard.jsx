@@ -30,9 +30,19 @@ export function ImageCard({ image, onDelete, selected, onToggleSelect, selection
     finally { setDeleting(false); setConfirm(false); }
   };
 
-  const copyUrl = (e) => {
+  const copyUrl = async (e) => {
     e.stopPropagation();
-    navigator.clipboard.writeText(image.url);
+    try {
+      await navigator.clipboard.writeText(image.url);
+    } catch {
+      const ta = document.createElement('textarea');
+      ta.value = image.url;
+      ta.style.cssText = 'position:fixed;opacity:0';
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+    }
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
